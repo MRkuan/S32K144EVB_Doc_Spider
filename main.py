@@ -11,40 +11,38 @@ import requests
 from bs4 import BeautifulSoup
 import sqlite3
 import datetime
+import re
 
 base_url = r'https://www.nxp.com/support/developer-resources/evaluation-and-development-boards/analog-toolbox/s32k144-evaluation-board:S32K144EVB?&tab=Documentation_Tab&lang=en&lang_cd=en&'
 base_download_url = r'https://www.nxp.com/'
 
-def write_txt_fun(txt):
-    with open('tmp.html', 'w',encoding = 'utf8') as f:
-        f.write(txt)
-
-def download_file(file_link,file_name):
-    response = requests.get(file_link)
-    with open('doc/'+file_name+'.pdf','wb') as f:
-        f.write(response.content)
-
 def main_fun():
     try:
-        page = requests.get(base_url)
-    except:
-        print('requests get fail!!')
-        return
-        
-    soup = BeautifulSoup(page.content)
-    write_txt_fun(soup.prettify())
+        page = requests.get(base_url)   
+        con = sqlite3.connect("main.db")    
+        cur = con.cursor()  
+        cur.execute('create table if not exists user (name STRING, ver DOUBLE)')
+        soup = BeautifulSoup(page.content)
+        for item in soup.find_all('li','relatedDocs-docTitle'):
+            title_link = base_download_url + item.contents[0].get('href')
+            title_name = item.contents[0].find('strong').get_text().strip()
+            title_ver = item.contents[1].get_text().strip()
+            title_name = title_name + title_ver
 
-    for item in soup.find_all('li','relatedDocs-docTitle'):
-        title_link = base_download_url + item.contents[0].get('href')
-        title_name = item.contents[0].find('strong').get_text().strip()
-        title_ver = item.contents[1].get_text().strip()
-        title_name = title_name + title_ver
+            value_name = title_name
+            value_ver =  float(re.split(r'[\s\)]+', title_ver)[1])
+            sql = "insert into user values ('%s', '%s')" % (value_name, value_ver)
+            cur.execute(sql)
+            con.commit()
+            response = requests.get(title_link)
+            with open('doc/'+title_name+'.pdf','wb') as f:
+                f.write(response.content)
 
-        download_file(title_link, title_name)
-
-        print('download pdf file successful', title_name)
-    print('download all successful !!!')
+            print('download pdf file successful', title_name)
+        con.close()
+        print('download all successful !!!')
+    except Exception as e:
+        print(e)
 
 if __name__ == '__main__':
     main_fun()
-  
