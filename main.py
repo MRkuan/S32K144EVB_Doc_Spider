@@ -104,29 +104,30 @@ def main_fun():
 
             # 4 email notify
             message = MIMEMultipart()
-            name, addr = parseaddr('S32k144_document_updater <%s>' % email_send_addr)
+            name, addr = parseaddr("%s <%s>" % (email_send_user,email_send_addr))
 
             message['From'] = formataddr((Header(name, 'utf-8').encode(), addr))
             message['To'] = Header("; ".join(email_rcv_addr),'utf-8')
             message['Subject'] = Header('[update] S32k144 document update', 'utf-8')
-            message.attach(MIMEText(base_url, 'plain', 'utf-8'))
+            tmp_txt = 'download url: ' + base_url
+            message.attach(MIMEText(tmp_txt, 'html', 'utf-8'))
 
-            file_paths = []
-            file_names = []
+            # file_paths = []
+            # file_names = []
 
-            for item in new_list:
-                file_name = item[1]
-                file_paths.append(os.path.join(os.path.abspath('.'),'doc',file_name+'.pdf'))
-                file_names.append(file_name +'.pdf')
+            # for item in new_list:
+            #     file_name = item[1]
+            #     file_paths.append(os.path.join(os.path.abspath('.'),'doc',file_name+'.pdf'))
+            #     file_names.append(file_name +'.pdf')
 
-            for file_path, file_name in zip(file_paths, file_names):
-                att = MIMEText(open(file_path, 'rb').read(), 'base64', 'utf-8')
-                att["Content-Type"] = 'application/octet-stream'
-                att["Content-Disposition"] = 'attachment; filename="' + file_name + '"'
-                message.attach(att)
+            # for file_path, file_name in zip(file_paths, file_names):
+            #     att = MIMEText(open(file_path, 'rb').read(), 'base64', 'utf-8')
+            #     att["Content-Type"] = 'application/octet-stream'
+            #     att["Content-Disposition"] = 'attachment; filename="' + file_name + '"'
+            #     message.attach(att)
 
-            # smtpObj = smtplib.SMTP(email_host, email_port)
-            smtpObj = smtplib.SMTP_SSL(email_host, email_port)
+            smtpObj = smtplib.SMTP(email_host, email_port)
+            # smtpObj = smtplib.SMTP_SSL(email_host, email_port)
 
             smtpObj.login(email_send_user, email_send_password)
             smtpObj.sendmail(email_send_addr, email_rcv_addr, message.as_string())
