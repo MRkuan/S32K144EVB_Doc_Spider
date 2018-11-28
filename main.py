@@ -6,6 +6,7 @@
 # https://www.crummy.com/software/BeautifulSoup/bs4/doc/index.zh.html    BeautifulSoup
 # http://www.w3school.com.cn/h.asp                                       w3school
 # http://www.runoob.com/sqlite/sqlite-python.html                        sqlite python ref
+# https://blog.csdn.net/zwq912318834/article/details/79571110            Simulation login
 
 import smtplib
 from email.mime.image import MIMEImage
@@ -22,19 +23,40 @@ import re
 import operator
 import os
 
+import yaml
+import http.cookiejar as cookielib
+
 base_url = r'https://www.nxp.com/support/developer-resources/evaluation-and-development-boards/analog-toolbox/s32k144-evaluation-board:S32K144EVB?&tab=Documentation_Tab&lang=en&lang_cd=en&'
 base_download_url = r'https://www.nxp.com/'
+
+header = {
+"Referer": r"https://www.nxp.com/security/login?TARGET=https://www.nxp.com/ruhp/myAccount.html",
+"User-Agent": r"Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/63.0.3239.132 Safari/537.36",
+}
+postUrl = r"https://www.nxp.com/security/login?TARGET=https://www.nxp.com/ruhp/myAccount.html"
+postData = {
+    "lt": "",
+    "execution": "",
+    "_eventId": "",
+    "username": "",
+    "password": "",
+}
 
 #email config ,please care, do not let out
 email_send_user = ''
 email_send_password = ''
 email_send_addr = ''
-email_rcv_addr = ['']
+email_rcv_addr = []
 email_host = ''
 email_port = 0
 
+nxp_email_address = ''
+nxp_password = ''
+
 old_list = [] #old list link name ver
 new_list = [] #new list link name ver
+
+nxp_session = requests.Session()
 
 def list_cmp(__old_list,__new_list):
     if len(__old_list) != len(__new_list):
@@ -51,14 +73,45 @@ def list_cmp(__old_list,__new_list):
 
 def main_fun():
     try:
-        page = requests.get(base_url)
-        con = sqlite3.connect("main.db")
-        cur = con.cursor()
-        cur.execute('create table if not exists user (link STRING, name STRING, ver DOUBLE)')
-        old_list = cur.execute('select * from user').fetchall()
-        new_list.clear();
+        # 0. read cfg
+        cfg_Path = os.path.join(os.path.dirname(__file__),'main_cfg.yaml')
+        content = yaml.load(open(cfg_Path))
+
+        email_send_user = content['email_send_user']
+        email_send_password = content['email_send_password']
+        email_send_addr = content['email_send_addr']
+        email_rcv_addr = content['email_rcv_addr']
+        email_host = content['email_host']
+        email_port = content['email_port']
+
+        nxp_email_address = content['nxp_email_address']
+        nxp_password = content['nxp_password']
+
+        # Simulation on nxp
+        nxp_session.cookies = cookielib.LWPCookieJar(filename = "Cookies.txt")
+        nxp_page = nxp_session.get(postUrl, allow_redirects = False)
+        nxp_soup = BeautifulSoup(nxp_page.content,"html.parser")
+
+        postData["lt"] = nxp_soup.find('input', {'name': 'lt'}).get('value')
+        postData["execution"] = nxp_soup.find('input', {'name': 'execution'}).get('value')
+        postData["_eventId"] = nxp_soup.find('input', {'name': '_eventId'}).get('value')
+
+
+        postData["username"] = nxp_email_address
+        postData["password"] = nxp_password
+
+        responseRes = nxp_session.post(postUrl,data = postData, headers = header)
+
+        print(f"statusCode = {responseRes.status_code}")
+        print(f"text = {responseRes.text}")
+
+        nxp_session.cookies.save()
+        nxp_session.cookies.load()
+
+        page = nxp_session.get(base_url, allow_redirects = False)
         soup = BeautifulSoup(page.content,"html.parser")
 
+        new_list.clear();
         for item in soup.find_all('li','relatedDocs-docTitle'):
             title_link = base_download_url +item.contents[0].get('href')
             title_name = item.contents[0].find('strong').get_text().strip()
@@ -69,40 +122,48 @@ def main_fun():
             value_ver =  float(re.split(r'[\s\)]+', title_ver)[1])
             new_list.append([title_link,value_name,value_ver])
 
+        con = sqlite3.connect("main.db")
+        cur = con.cursor()
+        cur.execute('create table if not exists user (link STRING, name STRING, ver DOUBLE)')
+        old_list = cur.execute('select * from user').fetchall()
+
         # if not eq then download file
         if not(list_cmp(old_list,new_list)) :
             print(old_list)
             print(new_list)
 
-            # 1 save new list
-            cur.execute("delete from user")
-            cur.execute('create table if not exists user (link STRING, name STRING, ver DOUBLE)')
+            # 1 delete doc file
+            dir = os.path.join(os.path.abspath('.'),'doc')
+            if os.path.exists(dir) :
+                for item in os.listdir(dir):
+                     os.remove(os.path.join(dir,item))
+            else:
+                os.mkdir(dir)
+
+            # 2 download file
             for item in new_list:
-                sql = "insert into user values ('%s', '%s', '%s')" % (item[0], item[1], item[2])
-                cur.execute(sql)
-            cur.close()
-            con.commit()
-            con.close()
+                file_link = item[0]
+                file_name = item[1]
+                if(file_link.endswith('.pdf')) :
+                    # response = nxp_session.get(file_link, allow_redirects = False)
+                    # with open(os.path.join(os.path.abspath('.'),'doc',file_name+'.pdf'),'wb') as f:
+                    #     f.write(response.content)
+                    pass
+                else:
+                    response = nxp_session.get(file_link,allow_redirects = True, headers = header)
+                    print(f"statusCode = {response.status_code}")
+                    print(f"text = {response.text}")
+                    soup = BeautifulSoup(response.content,"html.parser")
+                    tmp = soup.find('div',class_='col-md-1 col-md-offset-2 text-center').find('a').get("href")
 
-            # # 2 delete doc file
-            # dir = os.path.join(os.path.abspath('.'),'doc')
-            # if os.path.exists(dir) :
-            #     for item in os.listdir(dir):
-            #          os.remove(os.path.join(dir,item))
-            # else:
-            #     os.mkdir(dir)
+                    response = nxp_session.get(tmp, allow_redirects = False)
+                    with open(os.path.join(os.path.abspath('.'),'doc',file_name+'.pdf'),'wb') as f:
+                        f.write(response.content)
 
-            # # 3 download file
-            # for item in new_list:
-            #     file_link = item[0]
-            #     file_name = item[1]
-            #     response = requests.get(file_link)
-            #     with open(os.path.join(os.path.abspath('.'),'doc',file_name+'.pdf'),'wb') as f:
-            #         f.write(response.content)
-            #     print('download pdf file successful', file_name)
-            # print('download all successful !!!')
+                print('download pdf file successful', file_name)
+            print('download all successful !!!')
 
-            # 4 email notify
+            # 3 email notify
             message = MIMEMultipart()
             name, addr = parseaddr("%s <%s>" % (email_send_user,email_send_addr))
 
@@ -132,6 +193,18 @@ def main_fun():
             smtpObj.login(email_send_user, email_send_password)
             smtpObj.sendmail(email_send_addr, email_rcv_addr, message.as_string())
             smtpObj.quit()
+
+
+            # 4 save new list
+            cur.execute("delete from user")
+            cur.execute('create table if not exists user (link STRING, name STRING, ver DOUBLE)')
+            for item in new_list:
+                sql = "insert into user values ('%s', '%s', '%s')" % (item[0], item[1], item[2])
+                cur.execute(sql)
+            cur.close()
+            con.commit()
+            con.close()
+
             print('email notify successful !!!')
         else:
             print('no change')
