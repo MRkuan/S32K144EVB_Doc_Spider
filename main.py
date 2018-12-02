@@ -7,7 +7,8 @@
 # http://www.w3school.com.cn/h.asp                                       w3school
 # http://www.runoob.com/sqlite/sqlite-python.html                        sqlite python ref
 # https://blog.csdn.net/zwq912318834/article/details/79571110            Simulation login
-
+# https://www.cnblogs.com/liujiacai/p/7804848.html                       logging
+ 
 import smtplib
 from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
@@ -24,9 +25,9 @@ import operator
 import os
 
 import yaml
-import http.cookiejar as cookielib
+import logging
 
-base_url = r'https://www.nxp.com/support/developer-resources/evaluation-and-development-boards/analog-toolbox/s32k144-evaluation-board:S32K144EVB?&tab=Documentation_Tab&lang=en&lang_cd=en&'
+base_url = r'https://www.nxp.com/products/processors-and-microcontrollers/arm-based-processors-and-mcus/s32-automotive-platform/32-bit-automotive-general-purpose-microcontrollers:S32K?tab=Documentation_Tab'
 base_download_url = r'https://www.nxp.com/'
 
 header = {
@@ -58,23 +59,63 @@ new_list = [] #new list link name ver
 
 nxp_session = requests.Session()
 
+log_name = datetime.datetime.now().strftime('%Y-%m-%d-%H-%M-%S-')+ 'log.txt'
+cfg_Path = os.path.join(os.path.dirname(__file__),'main_cfg.yaml')
+log_path = os.path.join(os.path.dirname(__file__),'log')
+
+
 def list_cmp(__old_list,__new_list):
     if len(__old_list) != len(__new_list):
         return False
 
     for i in range(len(__old_list)):
-        if not(operator.eq(__old_list[i][0],__new_list[i][0])):
-            return False
-        if not(operator.eq(__old_list[i][1],__new_list[i][1])):
-            return False
-        if not(__old_list[i][2] == __new_list[i][2]):
-            return False
+        if not(len(__old_list[i]) == len(__new_list[i])):
+            return False    
+
+    for i in range(len(__old_list)):
+        for j in range(len(__old_list[i])):
+            if not(operator.eq(__old_list[i][j][0],__new_list[i][j][0])):
+                return False
+            if not(operator.eq(__old_list[i][j][1],__new_list[i][j][1])):
+                return False
+            if not(__old_list[i][j][2] == __new_list[i][j][2]):
+                return False
     return True
+
+def del_file(path):
+    ls = os.listdir(path)
+    for i in ls:
+        c_path = os.path.join(path, i)
+        if os.path.isdir(c_path):
+            del_file(c_path)
+        else:
+            os.remove(c_path)
+
+def delete_gap_dir(dir):
+    if os.path.isdir(dir):
+        for d in os.listdir(dir):
+            delete_gap_dir(os.path.join(dir, d))
+    if not os.listdir(dir):
+        os.rmdir(dir)
 
 def main_fun():
     try:
-        # 0. read cfg
-        cfg_Path = os.path.join(os.path.dirname(__file__),'main_cfg.yaml')
+        # 1. logging set
+        logger = logging.getLogger(__name__)
+        logger.setLevel(level = logging.INFO)
+        handler = logging.FileHandler(os.path.join(log_path,log_name))
+        handler.setLevel(logging.INFO)
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        handler.setFormatter(formatter)
+
+        console = logging.StreamHandler()
+        console.setLevel(logging.INFO)
+
+        logger.addHandler(handler)
+        logger.addHandler(console)
+        logger.info('1.set logging sucessfull')
+  
+        # 2. read cfg
         content = yaml.load(open(cfg_Path))
 
         email_send_user = content['email_send_user']
@@ -86,130 +127,167 @@ def main_fun():
 
         nxp_email_address = content['nxp_email_address']
         nxp_password = content['nxp_password']
+        logger.info('2.read cfg sucessfull')
 
-        # Simulation on nxp
-        nxp_session.cookies = cookielib.LWPCookieJar(filename = "Cookies.txt")
+        # 3.Simulation on nxp
         nxp_page = nxp_session.get(postUrl, allow_redirects = False)
         nxp_soup = BeautifulSoup(nxp_page.content,"html.parser")
 
         postData["lt"] = nxp_soup.find('input', {'name': 'lt'}).get('value')
         postData["execution"] = nxp_soup.find('input', {'name': 'execution'}).get('value')
         postData["_eventId"] = nxp_soup.find('input', {'name': '_eventId'}).get('value')
-
-
         postData["username"] = nxp_email_address
         postData["password"] = nxp_password
 
         responseRes = nxp_session.post(postUrl,data = postData, headers = header)
+        logger.info('3.Simulation on nxp sucessfull')
+        # print(f"statusCode = {responseRes.status_code}")
+        # print(f"text = {responseRes.text}")
 
-        print(f"statusCode = {responseRes.status_code}")
-        print(f"text = {responseRes.text}")
-
-        nxp_session.cookies.save()
-        nxp_session.cookies.load()
-
+        #4. analyze baseurl
         page = nxp_session.get(base_url, allow_redirects = False)
         soup = BeautifulSoup(page.content,"html.parser")
 
-        new_list.clear();
-        for item in soup.find_all('li','relatedDocs-docTitle'):
-            title_link = base_download_url +item.contents[0].get('href')
-            title_name = item.contents[0].find('strong').get_text().strip()
-            title_ver = item.contents[1].get_text().strip()
-            title_name = title_name + title_ver
+        logger.info('4.analyze baseurl')
+        logger.info('--------------------------')
+        # ref: https://segmentfault.com/q/1010000004828602
+        for item in soup.find_all('table',class_ = re.compile('table')):
+            logger.info(item.get('data-dtmtablename'))
+            tmp_new_list = []
+            tmp_new_list.append(['',item.get('data-dtmtablename'),0.0])
+            for tr_item in item.find('tbody',class_ = 'wraptable').find_all('tr'):
+                tmpList = tr_item.find_all('ul',class_ = re.compile('docList'))
+                title_item = tmpList[0].find('li',class_ = re.compile('docTitle'))
+                title_link = base_download_url +title_item.contents[0].get('href')
+                title_name = title_item.contents[0].find('strong').get_text().strip()
+                if len(title_item.contents) == 1 :
+                    title_ver = '(REV 0)'
+                else:
+                    title_ver = title_item.contents[1].get_text().strip()
+                title_name = title_name + title_ver
 
-            value_name = title_name
-            value_ver =  float(re.split(r'[\s\)]+', title_ver)[1])
-            new_list.append([title_link,value_name,value_ver])
+                value_name = title_name
+                value_ver =  float(re.split(r'[\s\)]+', title_ver)[1])
 
+                logger.info('-------')
+                logger.info('link: %s | name:%s | ver %s' %(title_link,value_name,value_ver))
+          
+                tmp_new_list.append([title_link,value_name.replace(':',','),value_ver])
+
+                if len(tmpList) == 1 :
+                    pass #todo: alone pdf
+                else:
+                    pass #todo: Related file
+            new_list.append(tmp_new_list)
+            logger.info('--------------------------')
+
+        #5. read sqlite data
         con = sqlite3.connect("main.db")
         cur = con.cursor()
-        cur.execute('create table if not exists user (link STRING, name STRING, ver DOUBLE)')
-        old_list = cur.execute('select * from user').fetchall()
+        for i in range(len(new_list)):
+            table_name = 'user%d' %(i)
+            cmd = 'create table if not exists %s (link STRING, name STRING, ver DOUBLE)' %(table_name)
+            cmd_select = 'select * from %s' %(table_name)
 
+            cur.execute(cmd)
+            tmp_old_list = cur.execute(cmd_select).fetchall()
+            old_list.append(tmp_old_list)
+        logger.info('5.ead sqlite data sucess full')
         # if not eq then download file
         if not(list_cmp(old_list,new_list)) :
-            print(old_list)
-            print(new_list)
-
-            # 1 delete doc file
+            # print(old_list)
+            # print(new_list)
+            logger.info('doc upadte!!!')
+            # 6 delete doc file
             dir = os.path.join(os.path.abspath('.'),'doc')
             if os.path.exists(dir) :
-                for item in os.listdir(dir):
-                     os.remove(os.path.join(dir,item))
+                del_file(dir)
+                delete_gap_dir(dir)
+                if not(os.path.exists(dir)) :
+                    os.mkdir(dir)
             else:
                 os.mkdir(dir)
+            logger.info('6.delete doc floder file')
 
-            # 2 download file
-            for item in new_list:
-                file_link = item[0]
-                file_name = item[1]
-                if(file_link.endswith('.pdf')) :
-                    # response = nxp_session.get(file_link, allow_redirects = False)
-                    # with open(os.path.join(os.path.abspath('.'),'doc',file_name+'.pdf'),'wb') as f:
-                    #     f.write(response.content)
-                    pass
-                else:
-                    response = nxp_session.get(file_link,allow_redirects = True, headers = header)
-                    print(f"statusCode = {response.status_code}")
-                    print(f"text = {response.text}")
-                    soup = BeautifulSoup(response.content,"html.parser")
-                    tmp = soup.find('div',class_='col-md-1 col-md-offset-2 text-center').find('a').get("href")
+            # # 7 download file
+            # tmp_dir = ''
+            # for list_item in new_list:
+            #     for item in list_item:
+            #         if (0 == list_item.index(item)):
+            #             tmp_dir = os.path.join(dir,item[1])
+            #             os.mkdir(tmp_dir)
+            #             logger.info('create floder：%s' %(tmp_dir))
+            #         else:
+            #             file_link = item[0]
+            #             file_name = item[1]
 
-                    response = nxp_session.get(tmp, allow_redirects = False)
-                    with open(os.path.join(os.path.abspath('.'),'doc',file_name+'.pdf'),'wb') as f:
-                        f.write(response.content)
+            #             if(file_link.endswith('.pdf')) :
+            #                 response = nxp_session.get(file_link, allow_redirects = False)
+            #                 with open(os.path.join(tmp_dir,file_name+'.pdf'),'wb') as f:
+            #                     f.write(response.content)
+            #                 logger.info('download pdf：%s suessful' %(file_name+'.pdf'))
+            #             elif(file_link.endswith('.zip')) :
+            #                 response = nxp_session.get(file_link, allow_redirects = False)
+            #                 with open(os.path.join(tmp_dir,file_name+'.zip'),'wb') as f:
+            #                     f.write(response.content)
+            #                 logger.info('download zip：%s suessful' %(file_name+'.zip'))
+            #             else:
+            #                 response = nxp_session.get(file_link,allow_redirects = True, headers = header)
+            #                 # print(f"statusCode = {response.status_code}")
+            #                 # print(f"text = {response.text}")
+            #                 soup = BeautifulSoup(response.content,"html.parser")
+            #                 tmp_link= soup.find('div',class_='col-md-1 col-md-offset-2 text-center').find('a').get("href")
+            #                 response = nxp_session.get(tmp_link, allow_redirects = False)
+            #                 if(tmp_link.endswith('.pdf')) :
+            #                     with open(os.path.join(tmp_dir,file_name+'.pdf'),'wb') as f:
+            #                         f.write(response.content)
+            #                     logger.info('download pdf：%s suessful' %(file_name+'.pdf'))
+            #                 elif(tmp_link.endswith('.zip')) :
+            #                     with open(os.path.join(tmp_dir,file_name+'.zip'),'wb') as f:
+            #                         f.write(response.content)
+            #                     logger.info('download zip %s suessful' %(file_name+'.zip'))
 
-                print('download pdf file successful', file_name)
-            print('download all successful !!!')
+            # logger.info('download all suessful')
 
-            # 3 email notify
-            message = MIMEMultipart()
-            name, addr = parseaddr("%s <%s>" % (email_send_user,email_send_addr))
+            # 8 save new list
+            for i in range(len(new_list)):
+                table_name = 'user%d' %(i)
+                cmd = 'create table if not exists %s (link STRING, name STRING, ver DOUBLE)' %(table_name)
+                cmd_delete = 'delete from %s' %(table_name)
 
-            message['From'] = formataddr((Header(name, 'utf-8').encode(), addr))
-            message['To'] = Header("; ".join(email_rcv_addr),'utf-8')
-            message['Subject'] = Header('[update] S32k144 document update', 'utf-8')
-            tmp_txt = 'download url: ' + base_url
-            message.attach(MIMEText(tmp_txt, 'html', 'utf-8'))
+                cur.execute(cmd_delete)
+                cur.execute(cmd)
+            for i in range(len(new_list)):
+                table_name = 'user%d' %(i)
+                for item in new_list[i]:
+                    sql = "insert into %s values ('%s', '%s', '%s')" % (table_name,item[0], item[1], item[2])
+                    cur.execute(sql)
 
-            # file_paths = []
-            # file_names = []
-
-            # for item in new_list:
-            #     file_name = item[1]
-            #     file_paths.append(os.path.join(os.path.abspath('.'),'doc',file_name+'.pdf'))
-            #     file_names.append(file_name +'.pdf')
-
-            # for file_path, file_name in zip(file_paths, file_names):
-            #     att = MIMEText(open(file_path, 'rb').read(), 'base64', 'utf-8')
-            #     att["Content-Type"] = 'application/octet-stream'
-            #     att["Content-Disposition"] = 'attachment; filename="' + file_name + '"'
-            #     message.attach(att)
-
-            smtpObj = smtplib.SMTP(email_host, email_port)
-            # smtpObj = smtplib.SMTP_SSL(email_host, email_port)
-
-            smtpObj.login(email_send_user, email_send_password)
-            smtpObj.sendmail(email_send_addr, email_rcv_addr, message.as_string())
-            smtpObj.quit()
-
-
-            # 4 save new list
-            cur.execute("delete from user")
-            cur.execute('create table if not exists user (link STRING, name STRING, ver DOUBLE)')
-            for item in new_list:
-                sql = "insert into user values ('%s', '%s', '%s')" % (item[0], item[1], item[2])
-                cur.execute(sql)
             cur.close()
             con.commit()
-            con.close()
-
-            print('email notify successful !!!')
+            con.close()  
+            logger.info('8.save new list successful !!!')
         else:
-            print('no change')
+            logger.info('doc no change')
+            return
     except Exception as e:
-        print(e)
+        logger.error(e)
+    finally:
+        # finally: email notify
+        message = MIMEMultipart()
+        name, addr = parseaddr("%s <%s>" % (email_send_user,email_send_addr))
+
+        message['From'] = formataddr((Header(name, 'utf-8').encode(), addr))
+        message['To'] = Header("; ".join(email_rcv_addr),'utf-8')
+        message['Subject'] = Header('[update] S32k144 document update', 'utf-8')
+        tmp_txt = 'download url: ' + base_url
+        message.attach(MIMEText(tmp_txt, 'html', 'utf-8'))
+
+        smtpObj = smtplib.SMTP(email_host, email_port)
+
+        smtpObj.login(email_send_user, email_send_password)
+        smtpObj.sendmail(email_send_addr, email_rcv_addr, message.as_string())
+        smtpObj.quit()
 
 if __name__ == '__main__':
      main_fun()
