@@ -8,6 +8,7 @@
 # http://www.runoob.com/sqlite/sqlite-python.html                        sqlite python ref
 # https://blog.csdn.net/zwq912318834/article/details/79571110            Simulation login
 # https://www.cnblogs.com/liujiacai/p/7804848.html                       logging
+# https://zhidao.baidu.com/question/588558497.html                       windows timer task
  
 import smtplib
 from email.mime.image import MIMEImage
@@ -57,12 +58,15 @@ nxp_password = ''
 old_list = [] #old list link name ver
 new_list = [] #new list link name ver
 
+admin_flag = 0
+
 nxp_session = requests.Session()
 
 log_name = datetime.datetime.now().strftime('%Y-%m-%d-%H-%M-%S-')+ 'log.txt'
 cfg_Path = os.path.join(os.path.dirname(__file__),'main_cfg.yaml')
 log_path = os.path.join(os.path.dirname(__file__),'log')
-
+db_path = os.path.join(os.path.dirname(__file__),'main.db')
+doc_path = os.path.join(os.path.dirname(__file__),'doc')
 
 def list_cmp(__old_list,__new_list):
     if len(__old_list) != len(__new_list):
@@ -121,7 +125,6 @@ def main_fun():
         email_send_user = content['email_send_user']
         email_send_password = content['email_send_password']
         email_send_addr = content['email_send_addr']
-        email_rcv_addr = content['email_rcv_addr']
         email_host = content['email_host']
         email_port = content['email_port']
 
@@ -170,7 +173,7 @@ def main_fun():
                 value_ver =  float(re.split(r'[\s\)]+', title_ver)[1])
 
                 logger.info('-------')
-                logger.info('link: %s | name:%s | ver %s' %(title_link,value_name,value_ver))
+                logger.info('link: %s | name: %s | ver: %s' %(title_link,value_name,value_ver))
           
                 tmp_new_list.append([title_link,value_name.replace(':',','),value_ver])
 
@@ -182,7 +185,7 @@ def main_fun():
             logger.info('--------------------------')
 
         #5. read sqlite data
-        con = sqlite3.connect("main.db")
+        con = sqlite3.connect(db_path)
         cur = con.cursor()
         for i in range(len(new_list)):
             table_name = 'user%d' %(i)
@@ -192,14 +195,14 @@ def main_fun():
             cur.execute(cmd)
             tmp_old_list = cur.execute(cmd_select).fetchall()
             old_list.append(tmp_old_list)
-        logger.info('5.ead sqlite data sucess full')
+        logger.info('5.read sqlite data sucess full')
         # if not eq then download file
         if not(list_cmp(old_list,new_list)) :
             # print(old_list)
             # print(new_list)
             logger.info('doc upadte!!!')
             # 6 delete doc file
-            dir = os.path.join(os.path.abspath('.'),'doc')
+            dir = doc_path
             if os.path.exists(dir) :
                 del_file(dir)
                 delete_gap_dir(dir)
@@ -209,45 +212,45 @@ def main_fun():
                 os.mkdir(dir)
             logger.info('6.delete doc floder file')
 
-            # # 7 download file
-            # tmp_dir = ''
-            # for list_item in new_list:
-            #     for item in list_item:
-            #         if (0 == list_item.index(item)):
-            #             tmp_dir = os.path.join(dir,item[1])
-            #             os.mkdir(tmp_dir)
-            #             logger.info('create floder：%s' %(tmp_dir))
-            #         else:
-            #             file_link = item[0]
-            #             file_name = item[1]
+            # 7 download file
+            tmp_dir = ''
+            for list_item in new_list:
+                for item in list_item:
+                    if (0 == list_item.index(item)):
+                        tmp_dir = os.path.join(dir,item[1])
+                        os.mkdir(tmp_dir)
+                        logger.info('create floder：%s' %(tmp_dir))
+                    else:
+                        file_link = item[0]
+                        file_name = item[1]
 
-            #             if(file_link.endswith('.pdf')) :
-            #                 response = nxp_session.get(file_link, allow_redirects = False)
-            #                 with open(os.path.join(tmp_dir,file_name+'.pdf'),'wb') as f:
-            #                     f.write(response.content)
-            #                 logger.info('download pdf：%s suessful' %(file_name+'.pdf'))
-            #             elif(file_link.endswith('.zip')) :
-            #                 response = nxp_session.get(file_link, allow_redirects = False)
-            #                 with open(os.path.join(tmp_dir,file_name+'.zip'),'wb') as f:
-            #                     f.write(response.content)
-            #                 logger.info('download zip：%s suessful' %(file_name+'.zip'))
-            #             else:
-            #                 response = nxp_session.get(file_link,allow_redirects = True, headers = header)
-            #                 # print(f"statusCode = {response.status_code}")
-            #                 # print(f"text = {response.text}")
-            #                 soup = BeautifulSoup(response.content,"html.parser")
-            #                 tmp_link= soup.find('div',class_='col-md-1 col-md-offset-2 text-center').find('a').get("href")
-            #                 response = nxp_session.get(tmp_link, allow_redirects = False)
-            #                 if(tmp_link.endswith('.pdf')) :
-            #                     with open(os.path.join(tmp_dir,file_name+'.pdf'),'wb') as f:
-            #                         f.write(response.content)
-            #                     logger.info('download pdf：%s suessful' %(file_name+'.pdf'))
-            #                 elif(tmp_link.endswith('.zip')) :
-            #                     with open(os.path.join(tmp_dir,file_name+'.zip'),'wb') as f:
-            #                         f.write(response.content)
-            #                     logger.info('download zip %s suessful' %(file_name+'.zip'))
+                        if(file_link.endswith('.pdf')) :
+                            response = nxp_session.get(file_link, allow_redirects = False)
+                            with open(os.path.join(tmp_dir,file_name+'.pdf'),'wb') as f:
+                                f.write(response.content)
+                            logger.info('download pdf：%s suessful' %(file_name+'.pdf'))
+                        elif(file_link.endswith('.zip')) :
+                            response = nxp_session.get(file_link, allow_redirects = False)
+                            with open(os.path.join(tmp_dir,file_name+'.zip'),'wb') as f:
+                                f.write(response.content)
+                            logger.info('download zip：%s suessful' %(file_name+'.zip'))
+                        else:
+                            response = nxp_session.get(file_link,allow_redirects = True, headers = header)
+                            # print(f"statusCode = {response.status_code}")
+                            # print(f"text = {response.text}")
+                            soup = BeautifulSoup(response.content,"html.parser")
+                            tmp_link= soup.find('div',class_='col-md-1 col-md-offset-2 text-center').find('a').get("href")
+                            response = nxp_session.get(tmp_link, allow_redirects = False)
+                            if(tmp_link.endswith('.pdf')) :
+                                with open(os.path.join(tmp_dir,file_name+'.pdf'),'wb') as f:
+                                    f.write(response.content)
+                                logger.info('download pdf：%s suessful' %(file_name+'.pdf'))
+                            elif(tmp_link.endswith('.zip')) :
+                                with open(os.path.join(tmp_dir,file_name+'.zip'),'wb') as f:
+                                    f.write(response.content)
+                                logger.info('download zip %s suessful' %(file_name+'.zip'))
 
-            # logger.info('download all suessful')
+            logger.info('download all suessful')
 
             # 8 save new list
             for i in range(len(new_list)):
@@ -262,30 +265,43 @@ def main_fun():
                 for item in new_list[i]:
                     sql = "insert into %s values ('%s', '%s', '%s')" % (table_name,item[0], item[1], item[2])
                     cur.execute(sql)
-
             cur.close()
             con.commit()
             con.close()  
             logger.info('8.save new list successful !!!')
+            admin_flag = 0
         else:
             logger.info('doc no change')
-            return
+            admin_flag = 1
     except Exception as e:
         logger.error(e)
+        admin_flag = 1
     finally:
         # finally: email notify
+        if (0 == admin_flag):
+            email_rcv_addr = content['email_rcv_addr']
+            logger.info('email to everyone')
+        else:
+            email_rcv_addr = content['email_rcv_admin_addr']
+            logger.info('email to adimn')
+
         message = MIMEMultipart()
         name, addr = parseaddr("%s <%s>" % (email_send_user,email_send_addr))
-
         message['From'] = formataddr((Header(name, 'utf-8').encode(), addr))
         message['To'] = Header("; ".join(email_rcv_addr),'utf-8')
         message['Subject'] = Header('[update] S32k144 document update', 'utf-8')
-        tmp_txt = 'download url: ' + base_url
+        tmp_txt = 'download url: ' + base_url + '         ' + 'file path:' + doc_path
         message.attach(MIMEText(tmp_txt, 'html', 'utf-8'))
+
+        att = MIMEText(open(os.path.join(log_path,log_name), 'rb').read(), 'base64', 'utf-8')
+        att["Content-Type"] = 'application/octet-stream'
+        att["Content-Disposition"] = 'attachment; filename="' + log_name + '"'
+        message.attach(att)
 
         smtpObj = smtplib.SMTP(email_host, email_port)
 
         smtpObj.login(email_send_user, email_send_password)
+
         smtpObj.sendmail(email_send_addr, email_rcv_addr, message.as_string())
         smtpObj.quit()
 
