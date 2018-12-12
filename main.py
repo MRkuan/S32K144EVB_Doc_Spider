@@ -63,10 +63,11 @@ admin_flag = 0
 nxp_session = requests.Session()
 
 log_name = datetime.datetime.now().strftime('%Y-%m-%d-%H-%M-%S-')+ 'log.txt'
-cfg_Path = os.path.join(os.path.dirname(__file__),'main_cfg.yaml')
-log_path = os.path.join(os.path.dirname(__file__),'log')
-db_path = os.path.join(os.path.dirname(__file__),'main.db')
-doc_path = os.path.join(os.path.dirname(__file__),'doc')
+file_path = os.path.dirname(os.path.abspath(__file__))
+cfg_Path = os.path.join(file_path,'main_cfg.yaml')
+log_path = os.path.join(file_path,'log')
+db_path = os.path.join(file_path,'main.db')
+doc_path = os.path.join(file_path,'doc')
 
 def list_cmp(__old_list,__new_list):
     if len(__old_list) != len(__new_list):
