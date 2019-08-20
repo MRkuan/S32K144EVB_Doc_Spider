@@ -28,8 +28,7 @@ import os
 import yaml
 import logging
 
-base_url = r'https://www.nxp.com/products/processors-and-microcontrollers/arm-based-processors-and-mcus/s32-automotive-platform/32-bit-automotive-general-purpose-microcontrollers:S32K?tab=Documentation_Tab'
-base_download_url = r'https://www.nxp.com/'
+base_url = r'https://www.nxp.com/products/processors-and-microcontrollers/arm-processors/s32-automotive-platform/32-bit-automotive-general-purpose-microcontrollers:S32K?tab=Documentation_Tab'
 
 header = {
 "Referer": r"https://www.nxp.com/security/login?TARGET=https://www.nxp.com/ruhp/myAccount.html",
@@ -63,11 +62,10 @@ admin_flag = 0
 nxp_session = requests.Session()
 
 log_name = datetime.datetime.now().strftime('%Y-%m-%d-%H-%M-%S-')+ 'log.txt'
-file_path = os.path.dirname(os.path.abspath(__file__))
-cfg_Path = os.path.join(file_path,'main_cfg.yaml')
-log_path = os.path.join(file_path,'log')
-db_path = os.path.join(file_path,'main.db')
-doc_path = os.path.join(file_path,'doc')
+cfg_Path = os.path.join(os.path.dirname(__file__),'main_cfg.yaml')
+log_path = os.path.join(os.path.dirname(__file__),'log')
+db_path = os.path.join(os.path.dirname(__file__),'main.db')
+doc_path = os.path.join(os.path.dirname(__file__),'doc')
 
 def list_cmp(__old_list,__new_list):
     if len(__old_list) != len(__new_list):
@@ -102,6 +100,11 @@ def delete_gap_dir(dir):
             delete_gap_dir(os.path.join(dir, d))
     if not os.listdir(dir):
         os.rmdir(dir)
+
+def validateTitle(title):
+    rstr = r"[\/\\\:\*\?\"\<\>\|]"  # '/ \ : * ? " < > |'
+    new_title = re.sub(rstr, "_", title)  # 替换为下划线
+    return new_title
 
 def main_fun():
     try:
@@ -162,7 +165,7 @@ def main_fun():
             for tr_item in item.find('tbody',class_ = 'wraptable').find_all('tr'):
                 tmpList = tr_item.find_all('ul',class_ = re.compile('docList'))
                 title_item = tmpList[0].find('li',class_ = re.compile('docTitle'))
-                title_link = base_download_url +title_item.contents[0].get('href')
+                title_link = "https://www.nxp.com/" +title_item.contents[0].get('href')
                 title_name = title_item.contents[0].find('strong').get_text().strip()
                 if len(title_item.contents) == 1 :
                     title_ver = '(REV 0)'
@@ -223,7 +226,7 @@ def main_fun():
                         logger.info('create floder：%s' %(tmp_dir))
                     else:
                         file_link = item[0]
-                        file_name = item[1]
+                        file_name = validateTitle(item[1]) # filter illegality character
 
                         if(file_link.endswith('.pdf')) :
                             response = nxp_session.get(file_link, allow_redirects = False)
@@ -240,7 +243,15 @@ def main_fun():
                             # print(f"statusCode = {response.status_code}")
                             # print(f"text = {response.text}")
                             soup = BeautifulSoup(response.content,"html.parser")
-                            tmp_link= soup.find('div',class_='col-md-1 col-md-offset-2 text-center').find('a').get("href")
+                            tmp_link =''
+                            try:
+                                tmp_link= soup.find('div',class_='col-md-1 col-md-offset-2 text-center').find('a').get("href")
+                            except:
+                                file_link = file_link[len("https://www.nxp.com/"):].strip()
+                                response = nxp_session.get(file_link, allow_redirects=False, headers=header)
+                                soup = BeautifulSoup(response.content, "html.parser")
+                                tmp_link = soup.find('div',class_='jive-attachments').find('a',class_='j-attachment-icon').get("href")
+                                tmp_link = "https://community.nxp.com/" + tmp_link
                             response = nxp_session.get(tmp_link, allow_redirects = False)
                             if(tmp_link.endswith('.pdf')) :
                                 with open(os.path.join(tmp_dir,file_name+'.pdf'),'wb') as f:
@@ -291,13 +302,13 @@ def main_fun():
         message['From'] = formataddr((Header(name, 'utf-8').encode(), addr))
         message['To'] = Header("; ".join(email_rcv_addr),'utf-8')
         message['Subject'] = Header('[update] S32k144 document update', 'utf-8')
-        tmp_txt = 'download url: ' + base_url + '         ' + 'file path:' + doc_path
+        tmp_txt = '[doc_url]: ' + base_url + '\r\n' + '[doc_download_path]:' + doc_path + '\r\n'  + '[log_download_file]:' + os.path.join(log_path,log_name)
         message.attach(MIMEText(tmp_txt, 'html', 'utf-8'))
 
-        att = MIMEText(open(os.path.join(log_path,log_name), 'rb').read(), 'base64', 'utf-8')
-        att["Content-Type"] = 'application/octet-stream'
-        att["Content-Disposition"] = 'attachment; filename="' + log_name + '"'
-        message.attach(att)
+        # att = MIMEText(open(os.path.join(log_path,log_name), 'rb').read(), 'base64', 'utf-8')
+        # att["Content-Type"] = 'application/octet-stream'
+        # att["Content-Disposition"] = 'attachment; filename="' + log_name + '"'
+        # message.attach(att)
 
         smtpObj = smtplib.SMTP(email_host, email_port)
 
